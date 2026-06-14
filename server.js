@@ -16,7 +16,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
-// --------------- URL Parsing ---------------
+// --------------- Platform Detection ---------------
 
 function extractYouTubeId(url) {
   const patterns = [
@@ -37,6 +37,12 @@ function extractApplePodcastIds(url) {
   return { showId: showMatch[1], episodeId: episodeMatch?.[1] || null };
 }
 
+function detectPlatform(url) {
+  if (extractYouTubeId(url)) return "youtube";
+  if (extractApplePodcastIds(url)) return "apple";
+  return null;
+}
+
 // --------------- Helpers ---------------
 
 function buildGoogleBooksLink(title, author) {
@@ -51,7 +57,7 @@ async function fetchYoutubeTranscript(videoId) {
   return snippets.map((s) => s.text).join(" ");
 }
 
-// --------------- Apple Podcasts Audio Transcription ---------------
+// --------------- Apple Podcasts Audio Pipeline ---------------
 
 async function resolveApplePodcastAudioUrl(showId, episodeId) {
   const lookupRes = await fetch(`https://itunes.apple.com/lookup?id=${showId}`);
@@ -116,7 +122,7 @@ function extractSegment(inputPath, outputPath, startSec, durationSec) {
   });
 }
 
-// --------------- Chunked Transcription ---------------
+// --------------- Chunked Transcription (Apple only) ---------------
 
 async function transcribeChunk(base64Audio, apiKey, model) {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -155,20 +161,17 @@ async function transcribeChunk(base64Audio, apiKey, model) {
 async function transcribeAudioUrl(audioUrl) {
   const key = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_AUDIO_MODEL || "openai/gpt-audio-mini";
-  const CHUNK_SEC = 300; // 5-minute segments
+  const CHUNK_SEC = 300;
 
-  // Create a temp directory for this transcription job
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "podcast-"));
   const originalPath = path.join(tmpDir, "source");
 
   try {
-    // 1. Download audio to temp file
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) throw new Error(`Audio download failed (HTTP ${audioRes.status}).`);
     const buffer = Buffer.from(await audioRes.arrayBuffer());
     fs.writeFileSync(originalPath, buffer);
 
-    // 2. Determine total duration via ffprobe
     let duration;
     try {
       duration = await probeDuration(originalPath);
@@ -183,7 +186,6 @@ async function transcribeAudioUrl(audioUrl) {
     const numChunks = Math.ceil(duration / CHUNK_SEC);
     let fullTranscript = "";
 
-    // 3. Process each chunk sequentially
     for (let i = 0; i < numChunks; i++) {
       const start = i * CHUNK_SEC;
       const chunkPath = path.join(tmpDir, `chunk-${i}.mp3`);
@@ -191,7 +193,6 @@ async function transcribeAudioUrl(audioUrl) {
       await extractSegment(originalPath, chunkPath, start, CHUNK_SEC);
       const chunkBuffer = fs.readFileSync(chunkPath);
 
-      // Safety cap per chunk (shouldn't fire with 5 min @ 64kbps ≈ 2.4 MB)
       if (chunkBuffer.length > 30 * 1024 * 1024) {
         throw new Error(`Segment ${i + 1} exceeds 30 MB — try a shorter episode or reduce CHUNK_SEC.`);
       }
@@ -203,7 +204,6 @@ async function transcribeAudioUrl(audioUrl) {
 
     return fullTranscript.trim();
   } finally {
-    // 4. Always clean up temp files
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
@@ -252,7 +252,7 @@ async function analyzeWithOpenRouter(transcriptText) {
   return Array.isArray(books) ? books : [];
 }
 
-// --------------- Routes ---------------
+// --------------- Route ---------------
 
 app.post("/api/extract", async (req, res) => {
   const { url } = req.body;
@@ -260,19 +260,23 @@ app.post("/api/extract", async (req, res) => {
     return res.status(400).json({ error: "A URL is required." });
   }
 
+  const platform = detectPlatform(url);
+  if (!platform) {
+    return res.status(400).json({ error: "Could not parse a valid YouTube or Apple Podcasts URL." });
+  }
+
   try {
     let transcript;
 
-    const appleIds = extractApplePodcastIds(url);
-    if (appleIds) {
-      const audioUrl = await resolveApplePodcastAudioUrl(appleIds.showId, appleIds.episodeId);
-      transcript = await transcribeAudioUrl(audioUrl);
-    } else {
+    if (platform === "youtube") {
+      // Lightweight path: grab captions directly — no audio download, no ffmpeg, no Whisper
       const videoId = extractYouTubeId(url);
-      if (!videoId) {
-        return res.status(400).json({ error: "Could not parse a valid YouTube or Apple Podcasts URL." });
-      }
       transcript = await fetchYoutubeTranscript(videoId);
+    } else {
+      // Heavy path: resolve RSS feed, download audio, chunk via ffmpeg, transcribe each segment
+      const ids = extractApplePodcastIds(url);
+      const audioUrl = await resolveApplePodcastAudioUrl(ids.showId, ids.episodeId);
+      transcript = await transcribeAudioUrl(audioUrl);
     }
 
     if (!transcript || transcript.trim().length < 20) {
@@ -290,7 +294,7 @@ app.post("/api/extract", async (req, res) => {
     if (err instanceof SyntaxError) {
       return res.status(500).json({ error: "Failed to parse AI response. Try again." });
     }
-    // Forward known user-facing messages cleanly
+
     const known =
       err.message?.startsWith?.("iTunes") ||
       err.message?.startsWith?.("RSS") ||
@@ -310,6 +314,7 @@ app.post("/api/extract", async (req, res) => {
     if (known) {
       return res.status(400).json({ error: err.message });
     }
+
     res.status(500).json({ error: err.message || "Something went wrong." });
   }
 });

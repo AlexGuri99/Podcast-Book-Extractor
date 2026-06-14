@@ -25,29 +25,32 @@
             "card-bg": "#ffffff",
             brand: "#3b82f6",
             "brand-dark": "#2563eb",
-            terminal: "#1a1a2e",
           },
         },
       },
     };
   </script>
   <style>
-    /* Terminal cursor blink */
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0; }
+    /* Loading spinner */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e4e4e7;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
     }
-    .cursor-blink {
-      animation: blink 1s step-end infinite;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
-    /* Status line entrance */
-    @keyframes slideIn {
+    /* Status text fade */
+    @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    .status-line {
-      animation: slideIn 0.25s ease-out;
+    .status-fade {
+      animation: fadeIn 0.3s ease-out;
     }
 
     /* Input focus ring */
@@ -94,26 +97,22 @@
       </div>
     </div>
 
-    <!-- Terminal Status Display -->
-    <div id="terminal" class="hidden max-w-xl mx-auto mb-6 bg-terminal rounded-xl p-5 font-mono text-sm leading-relaxed shadow-lg">
-      <div id="statusLines" class="space-y-0.5">
-        <div class="text-green-400/70 text-[11px] uppercase tracking-widest mb-2">Processing</div>
-      </div>
-      <div class="flex items-center gap-1 mt-1.5">
-        <span class="text-green-400/90 font-medium">$</span>
-        <span id="cursorLine" class="text-green-400/90"></span>
-        <span class="inline-block w-2 h-[14px] bg-green-400 cursor-blink"></span>
-      </div>
-    </div>
-
     <!-- Extract Button -->
-    <div class="flex justify-center mb-12">
+    <div class="flex justify-center mb-4">
       <button id="extractBtn" class="inline-flex items-center gap-2.5 px-6 py-3 bg-[#3b82f6] text-white text-[15px] font-medium rounded-xl shadow-[0_4px_14px_rgba(59,130,246,0.3)] hover:shadow-[0_6px_20px_rgba(59,130,246,0.4)] hover:bg-[#2563eb] active:scale-[0.97] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-[0_4px_14px_rgba(59,130,246,0.3)] disabled:hover:bg-[#3b82f6] disabled:active:scale-100">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-        Extract Books
+        <span id="btnText">Extract Books</span>
       </button>
+    </div>
+
+    <!-- Loading status (shown during extraction) -->
+    <div id="loadingStatus" class="hidden max-w-xl mx-auto mb-3">
+      <div class="flex items-center justify-center gap-3 py-2">
+        <div class="spinner"></div>
+        <span id="statusText" class="text-sm text-muted">Processing podcast content...</span>
+      </div>
     </div>
 
     <!-- Error -->
@@ -127,56 +126,25 @@
       No books could be extracted from this podcast. Please check your API configuration or try a different URL.
     </div>
 
-    </main>
+  </main>
 
   <script>
-    // --------------- Dummy data ---------------
+    // --------------- Status messages (client-side rotation) ---------------
 
-    const DUMMY_BOOKS = [
-      {
-        title: "The Black Swan",
-        author: "Nassim Nicholas Taleb",
-        context:
-          "Taleb's incisive breakdown of how rare, unpredictable events shape our world was a recurring theme throughout the conversation. The host emphasized how this book permanently changed their approach to risk and decision-making in uncertain environments.",
-        purchaseLink: "https://books.google.com/books?q=%22The%20Black%20Swan%22%20Nassim%20Nicholas%20Taleb",
-      },
-      {
-        title: "Thinking, Fast and Slow",
-        author: "Daniel Kahneman",
-        context:
-          "The guest referenced Kahneman's dual-system framework repeatedly when discussing cognitive biases in everyday choices. They called it essential reading for anyone looking to understand the hidden mechanics behind their own decisions.",
-        purchaseLink: "https://books.google.com/books?q=%22Thinking%20Fast%20and%20Slow%22%20Daniel%20Kahneman",
-      },
-      {
-        title: "Atomic Habits",
-        author: "James Clear",
-        context:
-          "A practical deep-dive into habit formation that came up during the segment on building sustainable routines. The guest credited Clear's framework of tiny improvements for a complete lifestyle overhaul over the past two years.",
-        purchaseLink: "https://books.google.com/books?q=%22Atomic%20Habits%22%20James%20Clear",
-      },
-      {
-        title: "Deep Work",
-        author: "Cal Newport",
-        context:
-          "Newport's philosophy of focused, undistracted work was highlighted as the single most impactful book on the host's productivity. The conversation explored how the principles apply beyond knowledge work to creative fields.",
-        purchaseLink: "https://books.google.com/books?q=%22Deep%20Work%22%20Cal%20Newport",
-      },
-      {
-        title: "Sapiens",
-        author: "Yuval Noah Harari",
-        context:
-          "A sweeping history of humankind that the panel returned to multiple times when discussing societal change. Harari's framing of shared narratives as the foundation of large-scale cooperation sparked the most discussion.",
-        purchaseLink: "https://books.google.com/books?q=%22Sapiens%22%20Yuval%20Noah%20Harari",
-      },
+    const STATUS_MESSAGES = [
+      "Processing podcast content...",
+      "Extracting transcript...",
+      "Analyzing references...",
+      "Curating book list...",
     ];
 
     // --------------- DOM refs ---------------
 
     const urlInput = document.getElementById("urlInput");
     const extractBtn = document.getElementById("extractBtn");
-    const terminal = document.getElementById("terminal");
-    const statusLines = document.getElementById("statusLines");
-    const cursorLine = document.getElementById("cursorLine");
+    const btnText = document.getElementById("btnText");
+    const loadingStatus = document.getElementById("loadingStatus");
+    const statusText = document.getElementById("statusText");
     const errorEl = document.getElementById("error");
     const resultsEl = document.getElementById("results");
     const warningEl = document.getElementById("warning");
@@ -199,43 +167,36 @@
       errorEl.classList.add("hidden");
       warningEl.classList.add("hidden");
       resultsEl.innerHTML = "";
-      terminal.classList.add("hidden");
-      statusLines.innerHTML =
-        '<div class="text-green-400/70 text-[11px] uppercase tracking-widest mb-2">Processing</div>';
-      cursorLine.textContent = "";
+      loadingStatus.classList.add("hidden");
     }
 
-    // --------------- Sequential Status ---------------
+    function setLoading(isLoading) {
+      extractBtn.disabled = isLoading;
+      btnText.textContent = isLoading ? "Extracting..." : "Extract Books";
+      if (isLoading) {
+        loadingStatus.classList.remove("hidden");
+      } else {
+        loadingStatus.classList.add("hidden");
+      }
+    }
 
-    async function runStatusSequence() {
-      const steps = [
-        { text: "Downloading podcast audio...", delay: 900 },
-        { text: "Slicing audio into 10-minute segments...", delay: 1400 },
-        { text: "Transcribing chunk 1 of 4...", delay: 2200 },
-        { text: "Transcribing chunk 2 of 4...", delay: 2400 },
-        { text: "Transcribing chunk 3 of 4...", delay: 2200 },
-        { text: "Transcribing chunk 4 of 4...", delay: 2400 },
-        { text: "Stitching comprehensive transcript...", delay: 1200 },
-        { text: "Analyzing unified text with AI...", delay: 1800 },
-        { text: "Results generated.", delay: 700 },
-      ];
+    // --------------- Status text rotation ---------------
 
-      terminal.classList.remove("hidden");
+    let statusInterval = null;
 
-      for (let i = 0; i < steps.length; i++) {
-        const s = steps[i];
-        await new Promise((r) => setTimeout(r, s.delay));
+    function startStatusRotation() {
+      let i = 0;
+      statusText.textContent = STATUS_MESSAGES[0];
+      statusInterval = setInterval(() => {
+        i = (i + 1) % STATUS_MESSAGES.length;
+        statusText.textContent = STATUS_MESSAGES[i];
+      }, 3000);
+    }
 
-        const line = document.createElement("div");
-        line.className = "status-line text-green-400/90";
-        line.textContent = "> " + s.text;
-        statusLines.appendChild(line);
-
-        // Keep cursor scrolled to latest
-        terminal.scrollTop = terminal.scrollHeight;
-
-        // Update cursor line with the next step (or empty on last)
-        cursorLine.textContent = i < steps.length - 1 ? steps[i + 1].text : "";
+    function stopStatusRotation() {
+      if (statusInterval) {
+        clearInterval(statusInterval);
+        statusInterval = null;
       }
     }
 
@@ -287,30 +248,17 @@
 
     extractBtn.addEventListener("click", async () => {
       resetUI();
-      extractBtn.disabled = true;
 
-      try {
-        // Run the status animation
-        await runStatusSequence();
-
-        // Show dummy books
-        renderBooks(DUMMY_BOOKS);
-      } catch (err) {
-        showError("Something went wrong during extraction. Please try again.");
-      } finally {
-        extractBtn.disabled = false;
+      const url = urlInput.value.trim();
+      if (!url) {
+        showError("Please enter a podcast URL to extract from.");
+        return;
       }
-    });
 
-    // --------------- API-based extraction (for real backend) ---------------
-
-    async function apiExtract(url) {
-      resetUI();
-      extractBtn.disabled = true;
+      setLoading(true);
+      startStatusRotation();
 
       try {
-        await runStatusSequence();
-
         const res = await fetch("/api/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -324,14 +272,14 @@
           return;
         }
 
-        renderBooks(data.books && data.books.length ? data.books : DUMMY_BOOKS);
+        renderBooks(data.books);
       } catch (err) {
         showError("Network error — check your connection and try again.");
-        renderBooks(DUMMY_BOOKS);
       } finally {
-        extractBtn.disabled = false;
+        stopStatusRotation();
+        setLoading(false);
       }
-    }
+    });
 
     // Allow Enter to submit
     urlInput.addEventListener("keydown", (e) => {
