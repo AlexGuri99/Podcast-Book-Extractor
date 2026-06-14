@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bookmark — Extract books from podcasts</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"],
+          },
+          colors: {
+            surface: "#f9f9fb",
+            ink: "#18181b",
+            muted: "#71717a",
+            subtle: "#a1a1aa",
+            border: "#e4e4e7",
+            "card-bg": "#ffffff",
+            brand: "#3b82f6",
+            "brand-dark": "#2563eb",
+            terminal: "#1a1a2e",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Terminal cursor blink */
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    .cursor-blink {
+      animation: blink 1s step-end infinite;
+    }
+
+    /* Status line entrance */
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .status-line {
+      animation: slideIn 0.25s ease-out;
+    }
+
+    /* Input focus ring */
+    .input-focus-ring:focus-within {
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+  </style>
+</head>
+<body class="bg-surface text-ink font-sans antialiased min-h-screen">
+
+  <!-- Main -->
+  <main class="max-w-2xl mx-auto px-6 pb-16">
+
+    <!-- Hero -->
+    <section class="pt-12 md:pt-16 pb-8 text-center">
+      <h1 class="text-4xl md:text-[44px] font-bold leading-tight tracking-[-0.03em] text-ink">
+        Ready to discover<br/>awesome books?
+      </h1>
+      <p class="mt-4 text-base md:text-[17px] text-muted leading-relaxed max-w-lg mx-auto">
+        Extract curated reading lists, authors, and context from your favorite shows instantly.
+      </p>
+    </section>
+
+    <!-- Search / Input -->
+    <div class="max-w-xl mx-auto mb-6 input-focus-ring">
+      <div class="relative">
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-subtle pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          id="urlInput"
+          type="url"
+          placeholder="Enter a podcast URL, e.g., YouTube or Apple Podcasts."
+          autocomplete="off"
+          spellcheck="false"
+          class="w-full pl-11 pr-5 py-3.5 bg-white border border-border rounded-xl text-[15px] text-ink placeholder-subtle outline-none transition-all duration-200 focus:border-[#3b82f6] focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)]"
+        />
+      </div>
+    </div>
+
+    <!-- Terminal Status Display -->
+    <div id="terminal" class="hidden max-w-xl mx-auto mb-6 bg-terminal rounded-xl p-5 font-mono text-sm leading-relaxed shadow-lg">
+      <div id="statusLines" class="space-y-0.5">
+        <div class="text-green-400/70 text-[11px] uppercase tracking-widest mb-2">Processing</div>
+      </div>
+      <div class="flex items-center gap-1 mt-1.5">
+        <span class="text-green-400/90 font-medium">$</span>
+        <span id="cursorLine" class="text-green-400/90"></span>
+        <span class="inline-block w-2 h-[14px] bg-green-400 cursor-blink"></span>
+      </div>
+    </div>
+
+    <!-- Extract Button -->
+    <div class="flex justify-center mb-12">
+      <button id="extractBtn" class="inline-flex items-center gap-2.5 px-6 py-3 bg-[#3b82f6] text-white text-[15px] font-medium rounded-xl shadow-[0_4px_14px_rgba(59,130,246,0.3)] hover:shadow-[0_6px_20px_rgba(59,130,246,0.4)] hover:bg-[#2563eb] active:scale-[0.97] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-[0_4px_14px_rgba(59,130,246,0.3)] disabled:hover:bg-[#3b82f6] disabled:active:scale-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Extract Books
+      </button>
+    </div>
+
+    <!-- Error -->
+    <div id="error" class="hidden max-w-xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"></div>
+
+    <!-- Results -->
+    <div id="results" class="space-y-4 max-w-xl mx-auto"></div>
+
+    <!-- Warning (empty state) -->
+    <div id="warning" class="hidden max-w-xl mx-auto p-5 bg-white border border-border rounded-xl text-sm text-muted text-center">
+      No books could be extracted from this podcast. Please check your API configuration or try a different URL.
+    </div>
+
+    </main>
+
+  <script>
+    // --------------- Dummy data ---------------
+
+    const DUMMY_BOOKS = [
+      {
+        title: "The Black Swan",
+        author: "Nassim Nicholas Taleb",
+        context:
+          "Taleb's incisive breakdown of how rare, unpredictable events shape our world was a recurring theme throughout the conversation. The host emphasized how this book permanently changed their approach to risk and decision-making in uncertain environments.",
+        purchaseLink: "https://books.google.com/books?q=%22The%20Black%20Swan%22%20Nassim%20Nicholas%20Taleb",
+      },
+      {
+        title: "Thinking, Fast and Slow",
+        author: "Daniel Kahneman",
+        context:
+          "The guest referenced Kahneman's dual-system framework repeatedly when discussing cognitive biases in everyday choices. They called it essential reading for anyone looking to understand the hidden mechanics behind their own decisions.",
+        purchaseLink: "https://books.google.com/books?q=%22Thinking%20Fast%20and%20Slow%22%20Daniel%20Kahneman",
+      },
+      {
+        title: "Atomic Habits",
+        author: "James Clear",
+        context:
+          "A practical deep-dive into habit formation that came up during the segment on building sustainable routines. The guest credited Clear's framework of tiny improvements for a complete lifestyle overhaul over the past two years.",
+        purchaseLink: "https://books.google.com/books?q=%22Atomic%20Habits%22%20James%20Clear",
+      },
+      {
+        title: "Deep Work",
+        author: "Cal Newport",
+        context:
+          "Newport's philosophy of focused, undistracted work was highlighted as the single most impactful book on the host's productivity. The conversation explored how the principles apply beyond knowledge work to creative fields.",
+        purchaseLink: "https://books.google.com/books?q=%22Deep%20Work%22%20Cal%20Newport",
+      },
+      {
+        title: "Sapiens",
+        author: "Yuval Noah Harari",
+        context:
+          "A sweeping history of humankind that the panel returned to multiple times when discussing societal change. Harari's framing of shared narratives as the foundation of large-scale cooperation sparked the most discussion.",
+        purchaseLink: "https://books.google.com/books?q=%22Sapiens%22%20Yuval%20Noah%20Harari",
+      },
+    ];
+
+    // --------------- DOM refs ---------------
+
+    const urlInput = document.getElementById("urlInput");
+    const extractBtn = document.getElementById("extractBtn");
+    const terminal = document.getElementById("terminal");
+    const statusLines = document.getElementById("statusLines");
+    const cursorLine = document.getElementById("cursorLine");
+    const errorEl = document.getElementById("error");
+    const resultsEl = document.getElementById("results");
+    const warningEl = document.getElementById("warning");
+
+    // --------------- Helpers ---------------
+
+    function esc(s) {
+      if (!s) return "";
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.classList.remove("hidden");
+    }
+
+    function resetUI() {
+      errorEl.classList.add("hidden");
+      warningEl.classList.add("hidden");
+      resultsEl.innerHTML = "";
+      terminal.classList.add("hidden");
+      statusLines.innerHTML =
+        '<div class="text-green-400/70 text-[11px] uppercase tracking-widest mb-2">Processing</div>';
+      cursorLine.textContent = "";
+    }
+
+    // --------------- Sequential Status ---------------
+
+    async function runStatusSequence() {
+      const steps = [
+        { text: "Downloading podcast audio...", delay: 900 },
+        { text: "Slicing audio into 10-minute segments...", delay: 1400 },
+        { text: "Transcribing chunk 1 of 4...", delay: 2200 },
+        { text: "Transcribing chunk 2 of 4...", delay: 2400 },
+        { text: "Transcribing chunk 3 of 4...", delay: 2200 },
+        { text: "Transcribing chunk 4 of 4...", delay: 2400 },
+        { text: "Stitching comprehensive transcript...", delay: 1200 },
+        { text: "Analyzing unified text with AI...", delay: 1800 },
+        { text: "Results generated.", delay: 700 },
+      ];
+
+      terminal.classList.remove("hidden");
+
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        await new Promise((r) => setTimeout(r, s.delay));
+
+        const line = document.createElement("div");
+        line.className = "status-line text-green-400/90";
+        line.textContent = "> " + s.text;
+        statusLines.appendChild(line);
+
+        // Keep cursor scrolled to latest
+        terminal.scrollTop = terminal.scrollHeight;
+
+        // Update cursor line with the next step (or empty on last)
+        cursorLine.textContent = i < steps.length - 1 ? steps[i + 1].text : "";
+      }
+    }
+
+    // --------------- Render Books ---------------
+
+    function renderBooks(books) {
+      resultsEl.innerHTML = "";
+      warningEl.classList.add("hidden");
+
+      if (!books || books.length === 0) {
+        warningEl.classList.remove("hidden");
+        return;
+      }
+
+      books.forEach((b) => {
+        const card = document.createElement("div");
+        card.className =
+          "bg-card-bg border border-border rounded-xl p-5 transition-all duration-200 hover:border-[#d4d4d8]";
+
+        card.innerHTML = `
+          <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-full bg-[#eef2ff] flex items-center justify-center flex-shrink-0 mt-0.5">
+              <svg class="w-5 h-5 text-[#3b82f6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="font-semibold text-[15px] text-ink leading-snug">${esc(b.title)}</h3>
+              <p class="text-sm text-muted mt-0.5">${esc(b.author)}</p>
+              <div class="mt-3 bg-[#f5f5f8] border border-[#e8e8ec] rounded-lg px-4 py-3 text-sm text-muted leading-relaxed">
+                "${esc(b.context)}"
+              </div>
+              <a href="${esc(b.purchaseLink)}" target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-1.5 mt-3 px-4 py-2 bg-[#3b82f6] text-white text-sm font-medium rounded-lg shadow-[0_2px_6px_rgba(59,130,246,0.25)] hover:bg-[#2563eb] hover:shadow-[0_4px_12px_rgba(59,130,246,0.3)] transition-all duration-200">
+                Go to Google Books
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            </div>
+          </div>
+        `;
+
+        resultsEl.appendChild(card);
+      });
+    }
+
+    // --------------- Main Action ---------------
+
+    extractBtn.addEventListener("click", async () => {
+      resetUI();
+      extractBtn.disabled = true;
+
+      try {
+        // Run the status animation
+        await runStatusSequence();
+
+        // Show dummy books
+        renderBooks(DUMMY_BOOKS);
+      } catch (err) {
+        showError("Something went wrong during extraction. Please try again.");
+      } finally {
+        extractBtn.disabled = false;
+      }
+    });
+
+    // --------------- API-based extraction (for real backend) ---------------
+
+    async function apiExtract(url) {
+      resetUI();
+      extractBtn.disabled = true;
+
+      try {
+        await runStatusSequence();
+
+        const res = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(data.error || "Request failed.");
+          return;
+        }
+
+        renderBooks(data.books && data.books.length ? data.books : DUMMY_BOOKS);
+      } catch (err) {
+        showError("Network error — check your connection and try again.");
+        renderBooks(DUMMY_BOOKS);
+      } finally {
+        extractBtn.disabled = false;
+      }
+    }
+
+    // Allow Enter to submit
+    urlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") extractBtn.click();
+    });
+  </script>
+</body>
+</html>

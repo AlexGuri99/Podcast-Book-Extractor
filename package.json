@@ -1,0 +1,20 @@
+{
+  "name": "podcast-book-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extract book recommendations from YouTube and Spotify podcast URLs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "openai": "^4.86.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "cors": "^2.8.5",
+    "fast-xml-parser": "^5.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "youtube-transcript": "^1.2.1"
+  }
+}
